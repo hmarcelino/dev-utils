@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME doctor
+# Summary: Run the doctor for $_SUB_NAME utils
+# Group: Sub Internals
+#
+# Help: Run the doctor to identify possible problems or to install missing packages
+
+source $_SUB_ROOT/share/utils/print.sh
+
+INSTALLER_DIR=$_SUB_ROOT
+
+os_packages=("node" "git" "jq" "ruby")
+ruby_gems=("json" "aws-sdk" "formatador" "colorize" "knife-solo" "net-scp" "net-ssh")
+
+println $YELLOW  "============================================="
+println $YELLOW "Running $_SUB_NAME doctor"
+println $YELLOW "============================================="
+
+chmod 600 $INSTALLER_DIR/share/aws/configs/*/aws-key
+chmod 600 $INSTALLER_DIR/share/aws/configs/*/aws-key.*
+
+echo "Checking OS packages"
+
+isOk="true"
+
+# check that you have the required packages
+for c in "${os_packages[@]}"
+do
+    if ! command -v $c | grep "$c" &>/dev/null; then
+        println_warning "OS package \"$c\" is required. Use \"yum\", \"apt\" or \"brew\" to install it."
+        isOk="false"
+    fi
+done
+
+echo "Checking ruby gem"
+
+# check that you have the required ruby gems installed
+for c in "${ruby_gems[@]}"
+do
+    test=`gem list | egrep "^$c" > /dev/null 2>&1`
+    if  [[ "$?" != "0" ]];then
+        sudo gem install $c
+    fi
+done
+
+if [[ $isOk == "true" ]]; then
+    println_success "You have everyhing that is required.";
+    println_success "You are ready to go!";
+else
+    echo ""
+    println_warning "You are missing some software.";
+    println_warning "Please install to take full advantage of the $SUB utilities";
+fi

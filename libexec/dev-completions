@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -e
+
+COMMAND="$1"
+if [ -z "$COMMAND" ]; then
+  echo "usage: $_SUB_NAME completions COMMAND [arg1 arg2...]" >&2
+  exit 1
+fi
+
+COMMAND_PATH="$(command -v "$_SUB_NAME-$COMMAND")"
+if grep -i "^# provide completions" "$COMMAND_PATH" >/dev/null; then
+  shift
+  exec "$COMMAND_PATH" --complete "$@"
+fi

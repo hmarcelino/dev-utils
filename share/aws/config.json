@@ -1,0 +1,15 @@
+{
+    "locations": [
+        {
+            "profile": "prod",
+            "region": "eu-west-1",
+            "imageId": "ami-bff32ccc"
+        },
+        {
+            "profile": "dev",
+            "region": "eu-central-1",
+            "imageId": "ami-bc5b48d0"
+        }
+    ]
+}
+    

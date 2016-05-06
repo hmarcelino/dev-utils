@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -e
+
+print_summaries() {
+  local internalGroup="Sub Internals"
+
+  local groups=("$internalGroup")
+  local commands=()
+  local summaries=()
+  local longest_command=0
+  local command
+
+  for command in $($_SUB_NAME-commands); do
+    local file="$(command_path "$command")"
+    if [ ! -h "$file" ]; then
+
+      local group="$(group "$file")"
+      local summary="$(summary "$file")"
+
+      if [ ! -n "$group" ]; then
+        group="$internalGroup"
+      fi
+
+      if [[ ! "${groups[@]}" =~ "$group" ]]; then
+        groups+=("$group")
+      fi
+
+      if [ -n "$summary" ]; then
+
+        # Add the group name before the command name
+        # so it's possible to filter by group when listing
+        # the commands.
+        commands["${#commands[@]}"]="$group:$command"
+        summaries["${#summaries[@]}"]="$summary"
+
+        if [ "${#command}" -gt "$longest_command" ]; then
+          longest_command="${#command}"
+        fi
+      fi
+
+    fi
+  done
+
+  local index
+  local columns="$(tput cols)"
+  local summary_length=$(( $columns - $longest_command - 5 ))
+
+  for (( index = 0; index < "${#groups[@]}"; index++ )); do
+
+    currentGroup="${groups[$index]}"
+
+    # print empty line and then the group
+    echo
+    echo "$currentGroup"
+
+    # and then iterate all the commands and get the group
+    # and see if the command starts with the group.
+    for (( c = 0; c < "${#commands[@]}"; c++ )); do
+      rawCommand="${commands[$c]}"
+
+      groupName=${rawCommand%%:*}
+      theCommand=${rawCommand#*:}
+
+      if [[ "$groupName" == "$currentGroup" ]]; then
+        printf "   %-${longest_command}s  %s\n" "$theCommand" \
+        "$(truncate "$summary_length" "${summaries[$c]}")"
+      fi
+    done
+
+  done
+}
+
+print_help() {
+  local file="$1"
+  local usage="$(usage "$file")"
+
+  if [ -n "$usage" ]; then
+    echo "$usage"
+
+    local help="$(help "$file")"
+    [ -n "$help" ] && echo && echo "$help"
+  else
+    echo "Sorry, this command isn't documented yet."
+  fi
+}
+
+command_path() {
+  command -v "$_SUB_NAME-$command" || command -v "$_SUB_NAME-sh-$command" || true
+}
+
+group() {
+  sed -n "s/^# Group: \(.*\)/\1/p" "$1"
+}
+
+summary() {
+  sed -n "s/^# Summary: \(.*\)/\1/p" "$1" | sed -n "s/\$_SUB_NAME/$_SUB_NAME/p"
+}
+
+usage() {
+  sed -n "s/^# \(Usage: .*\)/\1/p" "$1" | sed -n "s/\$_SUB_NAME/$_SUB_NAME/p"
+}
+
+help() {
+  awk '/^[^#]/{p=0} /^# Help:/{p=1} p' "$1" | sed "s/^# Help: //;s/^# //;s/^#//" | sed "s/\$_SUB_NAME/$_SUB_NAME/g"
+}
+
+truncate() {
+  local max_length="$1"
+  local string="$2"
+
+  if [ "${#string}" -gt "$max_length" ]; then
+    local length=$(( $max_length - 3 ))
+    echo "${string:0:$length}..."
+  else
+    echo "$string"
+  fi
+}
+
+# Provide completions
+if [ "$1" = "--complete" ]; then
+  exec "$_SUB_NAME-commands"
+  exit
+fi
+
+command="$1"
+case "$command" in
+"") echo "Usage: $_SUB_NAME <command> [<args>]
+
+Some useful $_SUB_NAME commands are:
+$(print_summaries)
+
+See '$_SUB_NAME help <command>' for information on a specific command."
+;;
+*)
+  file="$(command_path "$command")"
+
+  if [ -n "$file" ]; then
+    print_help "$file"
+  else
+    echo "$_SUB_NAME: no such command \`$command'" >&2
+    exit 1
+  fi
+esac
