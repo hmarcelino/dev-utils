@@ -1,0 +1,151 @@
+#!/usr/bin/ruby
+
+# Usage: $_SUB_NAME sync-es -o <es_origin> -d <es_destination>
+# Summary: Sync two instances of elasticsearches
+# Group: Dev Ops
+#
+# Help: Synchronizes two elasticsearches
+#
+#       -o|--origin      : the origin database host:port
+#       -d|--destination : the destination database host:port
+#
+#  * Example:
+#       $> $_SUB_NAME sync-es -o localhost:10200 -d localhost:9200
+#
+
+require 'colorize'
+require 'net/http'
+require 'json'
+require 'getoptlong'
+
+opts = GetoptLong.new(
+    ['--origin'     , '-o', GetoptLong::OPTIONAL_ARGUMENT],
+    ['--destination', '-d', GetoptLong::OPTIONAL_ARGUMENT]
+)
+
+#variables
+destination = ''
+origin      = ''
+@size       = 200
+@no_hits    = 0
+
+
+def valid_es_host host
+  begin
+    res  = Net::HTTP.get URI "http://"+host
+    json = JSON.parse(res)
+
+    if json['status'] == 200
+      puts "#{host} is on"
+      return true
+    else
+      puts "#{host} is off"
+      puts "Sync abort"
+      return false
+    end
+  #rescue is handling with the expectation [begin] [end]
+  rescue
+    puts "#{host} is off"
+    puts "Sync abort"
+
+    return false
+  end
+end
+
+
+def do_get_request url
+  begin
+    res  = Net::HTTP.get_response(url)
+    json = JSON.parse(res.body)
+
+    if res.code != "200"
+      puts "Error "+ uri.path + source
+      exit 0
+    end
+  rescue
+    puts "#{url} is off"
+    puts "Aborting sync"
+    exit 0
+  end
+  return json
+end
+
+#
+# host es host address to save the record
+# jsonArray_data an array of records to save
+#
+def do_post host, jsonArray_data
+  (jsonArray_data).each do |data|
+
+    @no_hits +=1
+
+    index = data['_index']
+    type  = data['_type']
+    id    = data['_id']
+    source= data['_source'].to_json
+
+    esUri = URI.parse 'http://'+host+'/'+index+'/'+type+'/'+id
+    http = Net::HTTP.new(esUri.host, esUri.port)
+    response = http.post(esUri.path, source)
+
+    if (response.code.to_i > 400)
+      puts "Error posting to: " + esUri.to_s + ", source_object: " + data.to_json
+    end
+
+    case
+      when @total_hits_to_import.to_i/4 == @no_hits
+        puts "Imported 25%"
+      when @total_hits_to_import.to_i/2 == @no_hits
+        puts "Imported 50%"
+      when (@total_hits_to_import.to_i*3)/4 == @no_hits
+        puts "Imported 75%"
+    end
+  end
+end
+
+
+####################
+# main block
+####################
+
+opts.each do |opt, arg|
+  case opt
+    when '--origin'      || '-o'
+      origin = arg
+    when '--destination' || '-d'
+      destination = arg
+  end
+end
+
+
+if destination.length < 1 || origin.length < 1
+  puts "Missing requiered arguments".colorize(:red)
+  puts
+  puts %x(#{ENV['_SUB_NAME']} help sync-es)
+  exit 1
+end
+
+if (!valid_es_host destination) || (!valid_es_host origin)
+  exit 2
+end
+
+json = do_get_request URI "http://#{origin}/_search?search_type=scan&scroll=1m&size=" + (@size.to_s)
+@total_hits_to_import = json['hits']['total'].to_s
+@scroll_id = json['_scroll_id']
+
+puts "It will import " + @total_hits_to_import + " records."
+puts "Starting importing (this action can take some time)"
+
+#Posting
+begin
+
+  json = do_get_request URI "http://#{origin}/_search/scroll?scroll=1m&scroll_id=#{@scroll_id}"
+  @scroll_id = json['_scroll_id']
+  do_post destination, json['hits']['hits']
+
+end until json['hits']['hits'].length == 0
+
+puts "Importing finished"
+puts
+puts "Total records imported: " + @no_hits.to_s
+puts "Sync completed with success"

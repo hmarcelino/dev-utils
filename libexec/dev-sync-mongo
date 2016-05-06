@@ -1,0 +1,161 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME sync-mongo -o <origin_host> -d <destination_host> [-d <another_destination>...] -n <db_name> [-y]
+# Summary: Copies MongDB database db_name from origin_host to destination_host
+# Group: Dev Ops
+#
+# Help: Copies a MongoDB database between MongoDB instances
+#
+#   The command will ask for overwrite confirmation, unless -y is used.
+#
+#   Optional:
+#      -o|--origin : the origin database host
+#      -d|--destination : the destination database host
+#      -n|--database-name : the database name
+#      -y|--auto-confirm : auto-accept confirmation
+#      -k|--key : key to identify previous dump file
+#      -a|--all : sync all databases
+#
+#  * Example:
+#       $> $_SUB_NAME sync-mongo -o mongodb.originhost.com:27017 -d mongodb.desthost.com:12345 -n personalisation
+#       $> $_SUB_NAME sync-mongo -o mongodb.originhost.com:27017 -d dest1:12345 -d dest2:12345 -n twitter -k 9e7e02 -y
+#
+# This implementation was based on https://github.com/sheharyarn/mongo-sync
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/utils/prompt.sh
+
+GETOPT_CMD=`find /usr/local/Cellar -name "getopt" | head -n 1`
+if [[ -z  $GETOPT_CMD ]]; then
+    GETOPT_CMD="getopt"
+fi
+
+MD5=md5sum
+if ! command -v "md5sum" | grep "md5sum" &>/dev/null; then
+    MD5=md5
+fi
+
+command_line="$@"
+
+auto_confirm=""
+origin_host=""
+db_name=""
+random_key=""
+sync_all_databases=""
+
+GETOPT=`$GETOPT_CMD -o "o:d:n:k:ya" -l "origin:,destination:,database-name:,key:,auto-confirm,all" -n 'mongo-sync' -- "$@"`
+
+eval set -- "$GETOPT"
+while true; do
+    case $1 in
+        -o|--origin)
+            case "$2" in
+                *) origin_host="$2" ; shift 2;;
+            esac
+        ;;
+        -d|--destination)
+            case "$2" in
+                *) dest_hosts+=("$2") ; shift 2;;
+            esac
+        ;;
+        -n|--database-name)
+            case "$2" in
+                *) db_name="$2" ; shift 2;;
+            esac
+        ;;
+        -k|--key)
+            case "$2" in
+                *) random_key="$2" ; shift 2;;
+            esac
+        ;;
+        -y|--auto-confirm)
+            auto_confirm="true"; shift
+        ;;
+        -a|--all)
+            sync_all_databases="true"; shift
+        ;;
+        --)
+            shift; break
+        ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+            exit 1
+        ;;
+    esac
+done
+
+if [[ $origin_host == "" ]] || [ ${#dest_hosts[@]} -eq 0 ]; then
+  println_error "Missing arguments. Check help information\n"
+  $_SUB_NAME help sync-mongo
+  exit 2
+fi
+
+if [[ $db_name == "" ]] && [[ $sync_all_databases == "" ]]; then
+  println_error "Missing arguments. Either the -n or -a option must be used.\n"
+  $_SUB_NAME help sync-mongo
+  exit 2
+fi
+
+printInfo "The following destinations will be overwritten:"
+for val in "${dest_hosts[@]}"; do
+  println_info "\t$val"
+done
+
+if [[ $auto_confirm == "" ]]; then
+  if [[ $sync_all_databases == "" ]]; then
+    get_confirmation "overwrite database $db_name at these destinations"
+  else
+    get_confirmation "overwrite all databases at these destinations"
+  fi
+fi
+
+db_name_command="-a"
+if [[ $sync_all_databases == "" ]]; then
+    db_name_command="-n $db_name"
+fi
+
+if [[ $random_key == "" ]]; then
+  println_info "Copying database"
+
+  random_key=`date | $MD5 | cut -b 1-6`
+
+  $_SUB_ROOT/share/mongo/mongo-dump.sh \
+    -o $origin_host \
+    $db_name_command \
+    -t "/tmp/dump-$random_key"
+
+  if [[ "$?" != "0" ]]; then
+      exit 3
+  fi
+
+fi
+
+if [[ ! -d /tmp/dump-$random_key ]]; then
+  println_error "Could not find database dump files. Aborting."
+  exit 4
+fi
+
+restore_failures=0;
+for dest_host in "${dest_hosts[@]}"; do
+  $_SUB_ROOT/share/mongo/mongo-restore.sh \
+    -d $dest_host \
+    $db_name_command \
+    -s "/tmp/dump-$random_key"
+
+  if [[ "$?" != "0" ]]; then
+    println_error "Restore failed for destination $dest_host"
+    ((restore_failures++))
+  fi
+
+done
+
+if [ $restore_failures -ne 0 ]; then
+  println_error "Not all destinations were synced. Dump file preserved at /tmp/dump-$random_key"
+  echo "You can retry with: $_SUB_NAME mongo-sync $(echo $command_line | sed -Ee 's/[ ]+-k[ ]+[0-9a-z]+[ ]*//g') -k $random_key"
+  exit 5
+else
+  rm -r /tmp/dump-$random_key
+  println_info "Database copied successfully"
+fi
