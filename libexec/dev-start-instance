@@ -1,0 +1,103 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME start-instance -n <name>
+# Summary: Starts a instance
+# Group: AWS
+#
+# Help: Start an instance
+#
+#  -n|--instance-name : the instance name
+#
+#  * Example: Start an instance
+#       $> $_SUB_NAME start-instance -n "quality-env"
+#
+
+require 'getoptlong'
+require 'colorize'
+require 'aws-sdk'
+require 'json'
+
+require "#{ENV['_SUB_ROOT']}/share/aws/aws_utils"
+
+CONN_TIMEOUT = 600
+PORT = 22
+
+instance_name = nil
+
+opts = GetoptLong.new(
+    ['--name', '-n', GetoptLong::REQUIRED_ARGUMENT]
+)
+
+begin
+    opts.each do |opt, arg|
+        case opt
+            when '--name' || '-n'
+                instance_name = arg
+        end
+    end
+rescue
+    exit 1
+end
+
+unless instance_name
+    puts 'Instance name is required'.colorize(:red)
+    puts %x(#{ENV['_SUB_NAME']} help stop-instance)
+    exit 2
+end
+
+begin
+
+    puts "Starting instance: #{instance_name}"
+
+    instance_info = AWSUtils::get_instance_info(instance_name)
+
+    unless instance_info
+        puts "Instance not found: #{instance_name}".colorize(:red)
+        exit 10
+    end
+
+    if instance_info[:state] == 'running'
+        puts 'Instance has already been started'.colorize(:green)
+        exit 0
+    end
+
+    instance_id = instance_info[:instanceId]
+    host = instance_info[:host]
+    region = instance_info[:region]
+
+    ec2_client = AWSUtils::get_ec2_client(region)
+
+    ec2_client.start_instances(:instance_ids => [instance_id])
+    is_started = ec2_client.wait_until(:instance_running, instance_ids: [instance_id])
+
+    unless is_started
+        puts "Instance didn't stopped in a fashionable time".colorize(:red)
+        exit 20
+    end
+
+    start_time = Time.now
+    current_time = start_time
+
+    while (current_time - start_time) <= CONN_TIMEOUT
+        begin
+            socket = TCPSocket.new(host, PORT)
+            socket.close
+
+            break
+        rescue Errno::ECONNREFUSED, Errno::ETIMEDOUT
+            sleep 1
+        end
+
+        current_time = Time.now
+    end
+
+    puts "Instance has started".colorize(:green)
+
+rescue => e
+    if e.class.name.start_with?('Aws::Errors')
+        puts "Error communicating with AWS: #{e.message.to_s.colorize(:red)}"
+        exit 100
+    else
+        raise e
+    end
+end

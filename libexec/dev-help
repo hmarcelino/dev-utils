@@ -22,6 +22,7 @@ print_summaries() {
       fi
 
       if [[ ! "${groups[@]}" =~ "$group" ]]; then
+
         groups+=("$group")
       fi
 
@@ -93,7 +94,7 @@ group() {
 }
 
 summary() {
-  sed -n "s/^# Summary: \(.*\)/\1/p" "$1" | sed -n "s/\$_SUB_NAME/$_SUB_NAME/p"
+  sed -n "s/^# Summary: \(.*\)/\1/p" "$1" | sed "s/\$_SUB_NAME/$_SUB_NAME/g"
 }
 
 usage() {

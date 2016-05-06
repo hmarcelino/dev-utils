@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME terminate-instance -n <instance_name>
+# Summary: Terminates an AWS instance
+# Group: AWS
+#
+# Help: Terminates an AWS instance.
+#
+#  -n|--instance-name : the instance name
+#
+#  * Example:
+#       $> $_SUB_NAME terminate-instance -n "biab-qual"
+#
+
+require 'getoptlong'
+require 'colorize'
+require 'aws-sdk'
+require 'json'
+
+require "#{ENV['_SUB_ROOT']}/share/aws/aws_utils"
+
+instance_name = nil
+
+opts = GetoptLong.new(
+    ['--name', '-n', GetoptLong::REQUIRED_ARGUMENT]
+)
+
+begin
+    opts.each do |opt, arg|
+        case opt
+            when '--name' || '-n'
+                instance_name = arg
+        end
+    end
+rescue
+    exit 1
+end
+
+unless instance_name
+    puts 'Instance name is required'.colorize(:red)
+    puts %x(#{ENV['_SUB_NAME']} help terminate-instance)
+    exit 1
+end
+
+begin
+
+    puts "Terminating instance: #{instance_name}"
+
+    instance_info = AWSUtils::get_instance_info(instance_name)
+
+    unless instance_info
+        puts "Instance not found: #{instance_name}".colorize(:red)
+        exit 10
+    end
+
+    if instance_info[:state] == 'terminated'
+        puts 'Instance is already terminated'.colorize(:green)
+        exit 0
+    end
+
+    instance_id = instance_info[:instanceId]
+    instance_ip = instance_info[:host]
+    region = instance_info[:region]
+
+    ec2_client = AWSUtils::get_ec2_client(region)
+
+    allocation_id = ec2_client.describe_addresses({public_ips: [instance_ip]})
+                        .addresses[0]
+                        .allocation_id
+
+    ec2_client.disassociate_address({public_ip: instance_ip})
+    ec2_client.release_address({allocation_id: allocation_id})
+    ec2_client.terminate_instances(:instance_ids => [instance_id])
+
+    is_terminated = ec2_client.wait_until(:instance_terminated, instance_ids: [instance_id])
+
+    if is_terminated
+        puts 'Instance is terminated'.colorize(:green)
+        exit 10
+    else
+        puts "Instance didn't terminate in a fashionable time".colorize(:red)
+        exit 11
+    end
+
+rescue => e
+    if e.class.name.start_with?('Aws::Errors')
+        puts "Error communicating with AWS: #{e.message.to_s.colorize(:red)}"
+        exit 100
+    else
+        raise e
+    end
+end

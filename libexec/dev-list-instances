@@ -1,0 +1,100 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME list-instances
+# Summary: Return a table with all instances information
+# Group: AWS
+#
+# Help: Return a table with all instances information
+#
+#  AWS Production
+#  +----------------+---------------+----------+---------+
+#  | name           | host          | user     | state   |
+#  +----------------+---------------+----------+---------+
+#  | ci             | 52.28.219.31  | ec2-user | running |
+#  +----------------+---------------+----------+---------+
+#  | Quality        |               | ec2-user | stopped |
+#  +----------------+---------------+----------+---------+
+#
+
+require 'rubygems'
+require 'aws-sdk'
+require 'formatador'
+require 'json'
+require 'colorize'
+
+require "#{ENV['_SUB_ROOT']}/share/aws/aws_utils"
+
+RUNNING_COLOR = 'green'
+STOPPED_COLOR = 'red'
+PROGRESS_COLOR = 'yellow'
+
+def print_instance_info_and_status
+
+    AWSUtils::LOCATIONS.each { |location|
+
+        region = location['region']
+        profile = location['profile']
+
+        instances_list = Array.new
+
+        # noinspection RubyArgCount
+        resp = AWSUtils::get_ec2_client(region)
+                   .describe_instances
+
+        resp.reservations.each do |res|
+            res.instances.each do |inst|
+                name = ''
+
+                inst[:tags].each { |t|
+                    if t.key == 'Name'
+                        name = t.value
+                    end
+                }
+
+                if inst[:state].name == 'running'
+                    state_color = RUNNING_COLOR
+
+                elsif inst[:state].name == 'stopped'
+                    state_color = STOPPED_COLOR
+
+                else
+                    state_color = PROGRESS_COLOR
+                end
+
+                instances_list << {
+                    'name' => name,
+                    'host' => "#{inst[:public_ip_address]}",
+                    'user' => 'ec2-user',
+                    'state' => "[#{state_color}]#{inst[:state].name}[/]"
+                }
+
+                instances_list.sort! { |i1, i2|
+                    i1['name'].downcase <=> i2['name'].downcase
+                }
+
+            end
+        end
+
+        Formatador.display_line("[green]AWS[/] [red]Profile: #{profile}[/] / [blue]Region : #{region}[/]")
+        Formatador.display_table(instances_list, %w(name host user state))
+        puts
+    }
+end
+
+####################
+# main block
+####################
+
+puts ''
+
+begin
+    print_instance_info_and_status
+
+rescue => e
+    if e.class.name.start_with?('Aws::Errors')
+        puts "Error communicating with AWS: #{e.message.to_s.colorize(:red)}"
+        exit 100
+    else
+        raise e
+    end
+end

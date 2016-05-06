@@ -4,13 +4,12 @@ require 'aws-sdk'
 
 module AWSUtils
 
-    BASE_DIR = "#{ENV['_BIAB_ROOT']}/share/aws/"
+    BASE_DIR = "#{ENV['_SUB_ROOT']}/share/aws/"
+    INSTANCES_DB = "#{BASE_DIR}/instancesDB"
 
     JSON_CONFIG_FILE = JSON.parse(File.read("#{BASE_DIR}/config.json"))
-    JSON_KEYS_REGISTER = JSON.parse(File.read("#{BASE_DIR}/configs/keys.register"))
-
+    JSON_KEYS_REGISTER = JSON.parse(File.read("#{INSTANCES_DB}/keys.register"))
     LOCATIONS = JSON_CONFIG_FILE['locations']
-
 
     # Returns a Aws::EC2::Client
     # with the credentials configured
@@ -88,7 +87,7 @@ module AWSUtils
                         :name => instance_name,
                         :host => "#{inst[:public_ip_address]}",
                         :user => 'ec2-user',
-                        :privateKey => "#{ENV['_BIAB_ROOT']}/share/#{JSON_KEYS_REGISTER[inst[:key_name]]}",
+                        :privateKey => "#{ENV['_SUB_ROOT']}/share/#{JSON_KEYS_REGISTER[inst[:key_name]]}",
                         :tag => "#{tag} AWS",
                         :instanceId => "#{inst[:instance_id]}",
                         :region => region,

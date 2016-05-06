@@ -1,0 +1,385 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME new-instance -n <name> -c <config_name> [-t <instance_type>] [-p <region>]
+# Summary: Creates a new instance in aws.
+# Group: AWS
+#
+# Help: Creates a new instance in aws.
+#
+#   -n|--name: the instance name.
+#   -c|--config-name: the config name
+#
+#   Optional:
+#      -t|--type: the instance type
+#      -p|--profile : the profile [default: dev]
+#
+#  * Example:
+#       $> $_SUB_NAME new-instance -n quality-env -c biab
+#       $> $_SUB_NAME new-instance -n development-env -c biab -p dev -t t2.micro
+#       $> $_SUB_NAME new-instance -n ci -c ci -p dev -t t2.medium
+#
+
+require 'getoptlong'
+require 'aws-sdk'
+require 'colorize'
+require 'socket'
+
+require "#{ENV['_SUB_ROOT']}/share/aws/aws_utils"
+
+DEFAULT_PROFILE = 'dev'
+DEFAULT_INSTANCE_TYPE = 't2.micro'
+AWS_USER = 'ec2-user'
+
+CONN_TIMEOUT = 600
+
+instance_name = nil
+config_name = nil
+instance_profile = nil
+instance_type = nil
+
+ec2_client = nil
+
+def options_valid?(properties_map = {})
+    has_valid_options = true
+
+    instance_name = properties_map[:instance_name]
+    config_name = properties_map[:config_name]
+
+    if !instance_name
+        puts "The instance name is required".colorize(:red)
+        has_valid_options = false
+    else
+
+        instance_info = AWSUtils::get_instance_info(instance_name)
+
+        if instance_info
+            puts "Instance name is already being used".colorize(:red)
+            has_valid_options = false
+        end
+
+    end
+
+    if !config_name
+        puts "You must set the type of configuration to apply".colorize(:red)
+        has_valid_options = false
+
+    elsif !Dir.exist?("#{AWSUtils::INSTANCES_DB}/#{config_name}")
+        puts "Configuration not available".colorize(:red)
+        has_valid_options = false
+    end
+
+    unless has_valid_options
+        puts %x(biab help new-empty-instance)
+    end
+
+    has_valid_options
+
+end
+
+def get_ec2_client(profile)
+
+    default_region = nil
+    region = nil
+
+    AWSUtils::LOCATIONS.each { |location|
+        if location['profile'] == DEFAULT_PROFILE
+            default_region = location['region']
+        end
+
+        if location['profile'] == profile
+            region = location['region']
+        end
+    }
+
+    unless region
+        puts "Profile not available: #{profile}".colorize(:yellow) + "Using default: #{DEFAULT_PROFILE}"
+        region = default_region
+    end
+
+    # noinspection RubyArgCount
+    AWSUtils::get_ec2_client(region)
+
+end
+
+def setup_key_pairs(ec2_client, config_name)
+
+    key_pair_name = 'kp-' + config_name
+
+    resp = ec2_client.describe_key_pairs(
+        {
+            filters: [
+                {
+                    name: 'key-name',
+                    values: [key_pair_name],
+                },
+            ],
+        }
+    )
+
+    if resp.key_pairs.empty?
+        puts "No key pair found: #{key_pair_name}. Importing new one".colorize(:blue)
+
+        key_pair_db = JSON.parse(File.read("#{AWSUtils::INSTANCES_DB}/keys.register"))
+        key_pair_pub = File.read("#{ENV['_SUB_ROOT']}/share/#{key_pair_db[key_pair_name]}.pub")
+
+        ec2_client.import_key_pair(
+            {
+                key_name: key_pair_name,
+                public_key_material: key_pair_pub
+            }
+        )
+
+        puts "key pair imported successfully".colorize(:green)
+
+    else
+        puts "key pair already imported".colorize(:blue)
+    end
+
+    key_pair_name
+
+end
+
+def setup_security_group(ec2_client, config_name)
+
+    sec_group_name = "sg_" + config_name
+
+    resp = ec2_client.describe_security_groups(
+        {
+            filters: [
+                {
+                    name: 'group-name',
+                    values: [sec_group_name],
+                },
+            ],
+        }
+    )
+
+    if resp.security_groups.empty?
+        puts "No security groud found: #{sec_group_name}. Creating new one".colorize(:blue)
+
+        sec_group_id = ec2_client.create_security_group(
+            {
+                dry_run: @DRY_RUN,
+                group_name: sec_group_name,
+                description: "security group for #{config_name} instances"
+            }
+        ).group_id
+
+        ec2_client.create_tags(
+            {
+                resources: [sec_group_id],
+                tags: [
+                    {
+                        key: "Name",
+                        value: sec_group_name,
+                    },
+                ],
+            }
+        )
+
+        JSON.parse(File.read("#{AWSUtils::INSTANCES_DB}/#{config_name}/security.json")).each { |sec|
+            ec2_client.authorize_security_group_ingress(
+                {
+                    dry_run: @DRY_RUN,
+                    group_name: sec_group_name,
+                    ip_protocol: sec['protocol'],
+                    from_port: sec['port'],
+                    to_port: sec['port'],
+                    cidr_ip: sec['cidr']
+                }
+            )
+
+        }
+
+        puts 'New security group created'.colorize(:green)
+
+    else
+        puts "Security group already created".colorize(:blue)
+    end
+
+    sec_group_name
+end
+
+def create_new_instance(ec2_client, properties_map)
+
+    sel_image_id = nil
+
+    profile = properties_map[:instance_profile]
+
+    AWSUtils::LOCATIONS.each { |location|
+        if location['profile'] == profile
+            sel_image_id = location['imageId']
+        end
+    }
+
+    puts "Starting instance. Please wait, this may take a while ..."
+
+    resp = ec2_client.run_instances(
+        {
+            image_id: sel_image_id,
+            min_count: 1,
+            max_count: 1,
+            key_name: properties_map[:key_name],
+            security_groups: [properties_map[:security_group]],
+            instance_type: properties_map[:instance_type]
+        }
+    )
+
+    instance_id = resp.instances[0].instance_id
+
+    ec2_client.create_tags(
+        {
+            resources: [instance_id],
+            tags: [
+                {
+                    key: "Name",
+                    value: properties_map[:instance_name],
+                },
+                {
+                    key: "Config Name",
+                    value: properties_map[:config_name],
+                }
+            ],
+        }
+    )
+
+    instance_id
+end
+
+def wait_until_connection(ec2_client, properties_map, timeout = CONN_TIMEOUT)
+
+    instance_id = properties_map[:instance_id]
+    config_name = properties_map[:config_name]
+
+    unless ec2_client.wait_until(:instance_running, instance_ids: [instance_id])
+        puts "The instance didn't started in a fashionable time".colorize(:yellow)
+        return false
+    end
+
+    ssh_def = JSON.parse(File.read("#{AWSUtils::INSTANCES_DB}/#{config_name}/security.json"))
+                  .find { |sec| sec['name'] == "ssh" }
+
+    if ssh_def
+        ssh_port = ssh_def['port']
+    else
+        return false
+    end
+
+    instance_ip = ec2_client.describe_instances({instance_ids: [instance_id]})
+                      .reservations[0]
+                      .instances[0]
+                      .public_ip_address
+
+    start_time = Time.now
+    current_time = start_time
+
+    while (current_time - start_time) <= timeout
+        begin
+            socket = TCPSocket.new(instance_ip, ssh_port)
+            socket.close
+
+            break
+        rescue Errno::ECONNREFUSED, Errno::ETIMEDOUT
+            sleep 1
+        end
+
+        current_time = Time.now
+    end
+
+    puts "Instance has started".colorize(:blue)
+
+    true
+end
+
+
+def assign_elastic_ip(ec2_client, properties_map)
+    instance_id = properties_map[:instance_id]
+
+    instance_ip = ec2_client.allocate_address
+                      .public_ip
+
+    ec2_client.associate_address(
+        {
+            instance_id: instance_id,
+            public_ip: instance_ip,
+            allow_reassociation: false
+        })
+
+    instance_ip
+end
+
+####################
+# main block
+####################
+
+opts = GetoptLong.new(
+    ['--name', '-n', GetoptLong::REQUIRED_ARGUMENT],
+    ['--config-name', '-c', GetoptLong::REQUIRED_ARGUMENT],
+    ['--type', '-t', GetoptLong::REQUIRED_ARGUMENT],
+    ['--profile', '-p', GetoptLong::REQUIRED_ARGUMENT]
+)
+
+begin
+    opts.each do |opt, arg|
+        case opt
+            when '--name' || '-n'
+                instance_name = arg
+
+            when '--config-name' || '-c'
+                config_name = arg
+
+            when '--type' || '-t'
+                instance_type = arg
+
+            when '--profile' || '-p'
+                instance_profile = arg
+        end
+    end
+rescue
+    exit 1
+end
+
+unless instance_type
+    instance_type = DEFAULT_INSTANCE_TYPE
+end
+
+unless instance_profile
+    instance_profile = DEFAULT_PROFILE
+end
+
+properties_map = {
+    :instance_name => instance_name,
+    :config_name => config_name,
+    :instance_type => instance_type,
+    :instance_profile => instance_profile,
+}
+
+begin
+    unless options_valid?(properties_map)
+        exit 1
+    end
+
+    ec2_client = get_ec2_client instance_profile
+
+    properties_map[:key_name] = setup_key_pairs(ec2_client, config_name)
+    properties_map[:security_group] = setup_security_group(ec2_client, config_name)
+    properties_map[:instance_id] = create_new_instance(ec2_client, properties_map)
+
+    if wait_until_connection(ec2_client, properties_map)
+        properties_map[:instance_ip] = assign_elastic_ip(ec2_client, properties_map)
+
+        puts "instance created successfully".colorize(:green)
+    else
+
+        exit 10
+    end
+
+
+rescue => e
+    if e.class.name.start_with?('Aws::Errors')
+        puts "Error communicating with AWS: #{e.message.to_s.colorize(:red)}"
+        exit 100
+    else
+        raise e
+    end
+end

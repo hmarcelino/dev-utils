@@ -1,0 +1,20 @@
+[
+    {
+        "name": "ssh",
+        "protocol": "tcp",
+        "port": "22",
+        "cidr": "0.0.0.0/0"
+    },
+    {
+        "name": "http",
+        "protocol": "tcp",
+        "port": "80",
+        "cidr": "0.0.0.0/0"
+    },
+    {
+        "name": "https",
+        "protocol": "tcp",
+        "port": "443",
+        "cidr": "0.0.0.0/0"
+    }
+]

@@ -1,0 +1,80 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME stop-instance -n <name>
+# Summary: Stop a instance
+# Group: AWS
+#
+# Help: Stop a instance
+#
+#  -n|--instance-name : the instance name
+#
+#  * Example: Stop a instance
+#       $> $_SUB_NAME stop-instance -n "quality-env"
+#
+
+require 'getoptlong'
+require 'colorize'
+require 'aws-sdk'
+require 'json'
+
+require "#{ENV['_SUB_ROOT']}/share/aws/aws_utils"
+
+instance_name = nil
+
+opts = GetoptLong.new(
+    ['--name', '-n', GetoptLong::REQUIRED_ARGUMENT]
+)
+
+begin
+    opts.each do |opt, arg|
+        case opt
+            when '--name' || '-n'
+                instance_name = arg
+        end
+    end
+rescue
+    exit 1
+end
+
+unless instance_name
+    puts 'Instance name is required'.colorize(:red)
+    puts %x(biab help stop-instance)
+    exit 2
+end
+
+begin
+
+    puts "Stopping instance: #{instance_name}"
+
+    instance_info = AWSUtils::get_instance_info(instance_name)
+
+    unless instance_info
+        puts "Instance not found: #{instance_name}".colorize(:red)
+        exit 10
+    end
+
+    instance_id = instance_info[:instanceId]
+    region = instance_info[:region]
+
+    # noinspection RubyArgCount
+    ec2_client = AWSUtils::get_ec2_client(region)
+
+    ec2_client.stop_instances(:instance_ids => [instance_id])
+    is_stopped = ec2_client.wait_until(:instance_stopped, instance_ids: [instance_id])
+
+    if is_stopped
+        puts "Instance is stopped".colorize(:green)
+        exit 0
+    else
+        puts "Instance didn't stopped in a fashionable time".colorize(:red)
+        exit 1
+    end
+
+rescue => e
+    if e.class.name.start_with?('Aws::Errors')
+        puts "Error communicating with AWS: #{e.message.to_s.colorize(:red)}"
+        exit 100
+    else
+        raise e
+    end
+end
