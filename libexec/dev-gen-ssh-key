@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME gen-ssh-key -n <name> [-h <hostname>]
+# Summary: Generate a rsa public/private key with 1024 bits
+# Group: Env
+#
+# Help: Generate a rsa public/private key with 1024 bits
+#  -n  : the name of the private/public key
+#  -h  : the hostname to use in the ~/.ssh/config file
+#
+#  * Example:  $> $_SUB_NAME gen-ssh-key -n github -h github.com
+
+SSH_CONFIG_FILE="$HOME/.ssh/config"
+
+name=""
+hostname=""
+
+while getopts "n:h:" optname
+do
+    case "$optname" in
+        "n")
+            name="$OPTARG"
+        ;;
+        "h")
+            hostname="$OPTARG"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+if [[ $name == "" ]]; then
+    echo "Missing argument."
+    $_SUB_NAME help gen-ssh-key
+    exit 1
+fi
+
+result=`ssh-keygen -t rsa -b 1024 -C $name -f ~/.ssh/$name`
+if [ $? -eq 0 ]; then
+    echo -e "Success generating public/private rsa key";
+    echo -e "public key:"
+    cat ~/.ssh/$name.pub
+
+else
+    echo "Error generating public/private rsa key";
+    exit 10
+fi
+
+if [[ $hostname != "" ]]; then
+    if [[ -f $SSH_CONFIG_FILE ]]; then
+        touch $SSH_CONFIG_FILE
+    fi
+
+    echo "Appending \"~/.ssh/config\" file"
+    echo "Host $hostname" >> $SSH_CONFIG_FILE
+    echo "     HostName $hostname " >> $SSH_CONFIG_FILE
+    echo "     IdentityFile ~/.ssh/$name" >> $SSH_CONFIG_FILE
+    echo "" >> $SSH_CONFIG_FILE
+fi

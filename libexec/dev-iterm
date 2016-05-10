@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME iterm [-t <tab-name>] [-p <profile-name>]
+# Summary: Renames the current tab or set a new profile.
+# Group: Env
+#
+# Help: Renames the current or set a new profile.
+#
+#  Optional:
+#      -t : set the tab name for the current session
+#      -t : set the profile for the current session
+#
+#  * A iterm2 console tab with the name production and the profile prod
+#    $> hm iterm -t production -p prod
+
+TAB_NAME="none"
+PROFILE_NAME="default";
+
+while getopts ":t:p:h" optname
+do
+    case "$optname" in
+        "t")
+            TAB_NAME="$OPTARG"
+            ;;
+        "p")
+            PROFILE_NAME="$OPTARG"
+            ;;
+        "h")
+            $_SUB_NAME help iterm
+            exit 0
+            ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            ;;
+         *)
+            # Should not occur
+            echo "Unknown error while processing options"
+         ;;
+    esac
+done
+
+if [[ ! $TAB_NAME == "none" ]] && [[ ! $TAB_NAME == "" ]]; then
+    TAB_NAME=`echo $TAB_NAME | tr [a-z] [A-Z]` > /dev/null
+    # change the tab title
+    echo -e "\033];$TAB_NAME\007"
+fi
+
+if [[ ! $PROFILE_NAME == "default" ]]; then
+    # change the profile
+    echo -e "\033]50;SetProfile=$PROFILE_NAME\a"
+fi
+
+# done
+exit 0;

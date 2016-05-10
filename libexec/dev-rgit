@@ -1,0 +1,33 @@
+#!/usr/bin/env ruby
+
+# Usage: $_SUB_NAME rgit <command>
+# Summary: Execute a git command on all the sub directories
+# Help: For each directory execute the git command
+# Group: Env
+#
+#  Examples:
+#
+#  * $_SUB_NAME rgit fetch
+#  * $_SUB_NAME rgit pull --rebase
+
+args = ARGV.join(" ")
+
+Dir.foreach('.') do |f|
+    next unless File.directory? f #only dirs
+    next if f =~ /\.+/  #skip . and ..
+
+    Dir.chdir(f) do |dir|
+        if Dir.new('.').include?('.git')
+
+            output = `git #{args} 2>&1`
+
+            unless output.empty? && $?.success?
+                puts dir
+                puts "-"*dir.size
+                puts output
+                puts "\n"
+            end
+        end
+
+    end
+end

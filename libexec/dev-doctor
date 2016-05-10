@@ -10,7 +10,7 @@ source $_SUB_ROOT/share/utils/print.sh
 
 INSTALLER_DIR=$_SUB_ROOT
 
-os_packages=("node" "git" "jq" "ruby")
+os_packages=("node" "git" "jq" "ruby" "bunzip2" "uncompress" "cabextract" "p7zip" "xz")
 ruby_gems=("json" "aws-sdk" "formatador" "colorize" "knife-solo" "net-scp" "net-ssh")
 
 println $YELLOW  "============================================="
