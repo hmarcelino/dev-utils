@@ -1,0 +1,191 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME mvn-package -c <config_file> -f <fatJar/War>
+# Summary: Creates an application with a self extract binary file
+# Group: Build & Deploy & Release
+#
+# Help: Creates a application self extract binary file.
+# This is usefull when using big fat jars or war files that can be run with the "-jar" flag.
+#
+#  -c : The configuration file
+#  -f : The Jar/War file to add
+#
+#   Optional:
+#      -v : Print more information about the process
+#
+#  Config file sample:
+#     app_name=dummy-app
+#     app_version=0.11.0-SNAPSHOT
+#     confs_dir=confs/local
+#     extra_startup_args=-Dlogging.config=confs/log4j2.xml \
+#          --config.location=confs/,/etc/mdas-beta-api/
+#     status_endpoint=http://localhost:8080/ping
+#
+#  * Example: create a new build for production and deploy to demo
+#       $> $_SUB_NAME mvn-package -c dev.package.conf -f app.war
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+
+# use this variable to print more information and
+# don't delete resources generated during the process
+debug="false"
+
+configFile=""
+buildFile=""
+
+mavenProfiles=""
+mavenArgs=""
+
+while getopts "c:f:P:D:v" optname
+do
+    case "$optname" in
+        "c")
+            configFile="$OPTARG"
+        ;;
+        "f")
+            buildFile="$OPTARG"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+if [[ $configFile == "" ]] || [[ $buildFile == "" ]]; then
+    println_error "Missing required arguments"
+    $_SUB_NAME help mvn-build-dist
+    exit 1
+fi
+
+if [[ ! -f $buildFile ]] ; then
+    print_error "Build file not found: "
+    echo $buildFile
+    exit 1
+fi
+
+if [[ ! -f $configFile ]] ; then
+    print_error "Configuration file not found: "
+    echo $configFile
+    exit 1
+fi
+
+# load config file
+. $configFile
+
+# Generating random number to use in the
+# temporary directory
+MD5=md5sum
+if ! command -v "md5sum" | grep "md5sum" &>/dev/null; then
+    MD5=md5
+fi
+tmpdir=`date | $MD5 | cut -b 1-6`
+tmpdir="/tmp/dev-build-$tmpdir"
+finalInstallScript="$tmpdir/install.sh"
+
+packagefile=$tmpdir/$app_name-$app_version.bin
+projectdir=$tmpdir/$app_name-$app_version/
+
+println_info "Using temporary dir $tmpdir"
+
+rm -rf $tmpdir;
+mkdir -p $tmpdir
+
+mkdir -p $tmpdir/etc/$app_name
+mkdir -p $projectdir/
+mkdir -p $projectdir/{bin,confs,lib}
+
+##################################
+# STAGE: Copy files
+##################################
+
+# Copy all files to the correspondent folder
+cp -R "$_SUB_ROOT"/share/package/linux/etc/* $tmpdir/etc/
+cp -R "$_SUB_ROOT"/share/package/linux/bin/* $projectdir/bin/
+cp -R $confs_dir/* $projectdir/confs/
+cp "$buildFile" $projectdir/lib/
+
+
+echo "Creating install script"
+
+echo "#!/bin/bash"      >> $finalInstallScript
+echo ""                 >> $finalInstallScript
+
+# add variables
+echo "project=\"$app_name\"" >> $finalInstallScript
+echo "version=\"$app_version\"" >> $finalInstallScript
+echo "" >> $finalInstallScript
+
+bannerFile=`find . -name "banner.txt" | head -n 1`
+if [[ -f  $bannerFile ]]; then
+    while IFS="" read -r line; do
+        echo "echo \" $line \" " >> $finalInstallScript
+    done < $bannerFile
+fi
+
+# Add the rest of the install.sh file
+cat $_SUB_ROOT/share/package/install.sh >> $finalInstallScript
+
+chmod +x $finalInstallScript
+
+# copy default configuration files
+# and comment all lines
+cp -R $confs_dir/* "$tmpdir/etc/$app_name"
+find "$tmpdir/etc/$app_name" -type f -name "*" -exec sed -i '' 's/\(.*\)/# \1/g' {} \;
+find "$tmpdir/etc/$app_name" -type f -name "*.xml" -exec sed -i '' 's/^#\(.*\)$/<!-- \1 -->/g' {} \;
+
+
+##################################
+# STAGE: Replace paceholders
+##################################
+
+# Great tip from http://stackoverflow.com/questions/32610261/sed-error-bad-flag-in-substitute-command-u
+
+sed -i '' "s/{{APP_USER}}/$app_run_as_user/g" $tmpdir/etc/init.d/application
+sed -i '' "s/{{APP_NAME}}/$app_name/g" $tmpdir/etc/init.d/application
+sed -i '' "s^{{STATUS_ENDPOINT}}^$status_endpoint^g" $tmpdir/etc/init.d/application
+mv $tmpdir/etc/init.d/application $tmpdir/etc/init.d/$app_name
+
+buildFileName=$(basename "$buildFile")
+sed -i '' "s^{{EXTRA_STARTUP_ARGS}}^$extra_startup_args^g" $projectdir/bin/start.sh
+sed -i '' "s/{{APP_NAME}}/$app_name/g" $projectdir/bin/start.sh
+sed -i '' "s^{{BUILD_FILE}}^$buildFileName^g" $projectdir/bin/start.sh
+
+sed -i '' "s^{{BUILD_FILE}}^$buildFileName^g" $projectdir/bin/stop.sh
+sed -i '' "s/{{APP_NAME}}/$app_name/g" $projectdir/bin/stop.sh
+
+##################################
+# STAGE: Package
+##################################
+
+cp $_SUB_ROOT/share/package/selfextract $packagefile
+$(cd $tmpdir && tar -czf - install.sh $app_name-$app_version/ etc/ >> $packagefile)
+chmod +x $packagefile
+cp $packagefile "$PWD"
+
+##################################
+# STAGE: cleanup and finish
+##################################
+if [[ $debug == "false" ]]; then
+    echo "Deleting temporary directory"
+    rm -rf $tmpdir
+fi
+
+println_success "Packaging process finished"
+echo "File: $app_name-$app_version.bin"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "Build package done"
+fi

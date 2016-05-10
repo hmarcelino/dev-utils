@@ -1,0 +1,17 @@
+#!/bin/bash
+
+MD5=md5sum
+
+if ! command -v "md5sum" | grep "md5sum" &>/dev/null; then
+    MD5=md5
+fi
+
+# Generating random number to use in the
+# temporary directory
+tmpdir=`date | $MD5 | cut -b 1-6`
+tmpdir="/tmp/dev-temp-$tmpdir"
+rm -rf $tmpdir
+mkdir $tmpdir
+
+sed -e '1,/^exit$/d' "$0" | tar xzf - -C $tmpdir && (cd $tmpdir && ./install.sh) && rm -rf $tmpdir
+exit

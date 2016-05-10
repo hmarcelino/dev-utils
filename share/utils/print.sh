@@ -19,7 +19,7 @@ function print_warning {
 }
 
 function print_error {
-    printf "${RED}%s${NOCOLOR}"
+    printf "${RED}%s${NOCOLOR}" "$1"
 }
 
 

@@ -1,0 +1,143 @@
+#!/bin/sh
+#
+# /etc/init.d/{{APP_NAME}}
+# Subsystem file for "{{APP_NAME}}" application
+#
+# chkconfig: 2345 95 05
+# description: {{APP_NAME}} daemon
+#
+# processname: {{APP_NAME}}
+# pidfile: /var/run/{{APP_NAME}}.pid
+
+# source function library
+. /etc/rc.d/init.d/functions
+
+RETVAL=0
+
+prog="{{APP_NAME}}"
+user="{{APP_USER}}"
+statusEndpoint="{{STATUS_ENDPOINT}}"
+
+pidfile=/var/run/$prog.pid
+
+start() {
+	startMessage=$"Starting $prog service: "
+	echo -n $"$startMessage"
+
+    pid=`cat "$pidfile" 2>/dev/null`
+    if [ -n "$pid" ]; then
+		failure "$startMessage"
+		echo
+        echo "$prog already running with pid $pid"
+		exit 1
+	else
+		su -c "cd /opt/$prog/current/bin/ && ./start.sh" $user 2>&1 > /dev/null
+		sleep 5
+
+		if [[ statusEndpoint != "" ]]; then
+			started="false"
+			totalRetries=15
+			while [[ $totalRetries -gt 0 ]]; do
+				status=`curl -I "$statusEndpoint" 2>/dev/null | head -n 1 | cut -d$' ' -f2`
+				if [[ "$status" == "pong" ]]; then
+					totalRetries=0
+					started="true"
+				else
+					totalRetries=$[$totalRetries-1]
+					sleep 5
+				fi
+			done
+		else
+			started="true"
+		fi
+
+		if [[ $started == "true" ]]; then
+			sudo bash -c "ps ax | grep \"jar /opt/$prog/current/\" | grep -v grep | awk '{print \$1}' > $pidfile"
+			sudo touch /var/lock/subsys/$prog
+			success "$startMessage"
+			echo
+			RETVAL=0
+		else
+			failure "$startMessage"
+			echo
+			RETVAL=1
+		fi
+	fi
+}
+
+stop() {
+	stopMessage=$"Stopping $prog service: "
+	echo -n $"$stopMessage"
+
+	currentPid=`sudo cat "$pidfile"  2>/dev/null`
+	if [ ! -n "$currentPid" ]; then
+		failure "$stopMessage"
+		echo
+		echo "Couldn't find pid in $pidfile"
+
+		# Deleting all lock files to guarantee
+		# that we can start again in case there was
+		# an error starting the application
+		rm -f /var/lock/subsys/$prog
+		rm -f $pidfile
+
+		exit 1
+	fi
+
+	pid=`ps -p $currentPid | grep "$currentPid"`
+	if [ ! -n "$pid" ]; then
+		failure "$stopMessage"
+		echo
+		echo "Couldn't find $prog process with pid $currentPid. Maybe it was already stopped."
+
+	else
+		su -c "cd /opt/$prog/current/bin/ && ./stop.sh" $user > /dev/null
+		stopped="false"
+		totalRetries=10
+
+		while [[ $totalRetries -gt 0 ]]; do
+			pid=`ps -p $currentPid | grep "$currentPid"`
+
+			if [ -n "$pid" ]; then
+				sleep 5
+				totalRetries=$[$totalRetries-1]
+			else
+				totalRetries=0
+				stopped="true"
+			fi
+		done
+
+		if [ $stopped == "true" ]; then
+			success "$stopMessage"
+			echo
+			RETVAL=0
+		else
+			failure "$stopMessage"
+			echo
+			echo "Cound't stop $prog in a fashionable time. Going to kill it."
+			kill -9 $currentPid
+			RETVAL=2
+		fi
+	fi
+
+	rm -f /var/lock/subsys/$prog
+	rm -f $pidfile
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		start
+		;;
+	*)
+		echo $"Usage: $0 {start|stop|restart}"
+		RETVAL=1
+esac
+
+exit $RETVAL

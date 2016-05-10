@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Usage: mgc mvn-release [-m] [-v]
+# Summary: Makes a release of a maven project
+# Group: Build & Deploy & Release
+#
+# Help: Makes a release of a maven project
+#
+#   This was build taking in consideration the Semantic version principles
+#   * http://semver.org/
+#
+#   Optional:
+#      -m : if the release is a major release
+#      -v : Print more information about the process and
+#           don't delete resources generated during the process
+#
+
+source $_MGC_ROOT/share/utils/print.sh
+
+debug="false"
+majorRelease="false"
+
+while getopts "mv" optname
+do
+    case "$optname" in
+        "m")
+            majorRelease="true"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+
+if [[ ! -f "$PWD"/pom.xml ]]; then
+    println_error "Not a maven project";
+    exit 1
+fi
+
+if [[ ! -d ".git" ]]; then
+    println_error "Not a git project";
+    exit 1
+fi
+
+currentBranch=$(git symbolic-ref --short -q HEAD)
+
+if [[ "$majorRelease" == "true" && $currentBranch != "master" ]]; then
+    println_error "You are not in the correct branch. You should be in master"
+    exit 2
+fi
+
+version=`grep "<version>" pom.xml | head -n 1 | sed "s/ *<[^<]*>//g"`
+major=`echo $version | awk '{split($0, v, "."); print v[1]}'`
+minor=`echo $version | awk '{split($0, v, "."); print v[2]}'`
+patch=`echo $version | awk '{split($0, v, "."); split(v[3], p, "-"); print p[1]}'`
+
+nextMajor=`echo $major | awk '{major=$0+1; print major}'`
+nextMinor=`echo $minor | awk '{minor=$0+1; print minor}'`
+nextPatch=`echo $patch | awk '{patch=$0+1; print patch}'`
+
+releaseVersion="$major.$minor.$patch"
+releaseTag="release-$releaseVersion"
+nextVersion=""
+
+println_info "Performing release version $releaseVersion"
+
+if [[ $majorRelease == "true" ]]; then
+    releaseVersion="$nextMajor.0.0"
+    nextVersion="$nextMajor.1.0-SNAPSHOT"
+
+elif [[ $currentBranch == "master" ]]; then
+    nextVersion="$major.$nextMinor.0-SNAPSHOT"
+
+else
+    nextVersion="$major.$minor.$nextPatch-SNAPSHOT"
+fi
+
+mvn release:prepare \
+      -DreleaseVersion=$releaseVersion \
+      -DdevelopmentVersion=$nextVersion \
+      -DautoVersionSubmodules=true \
+      -Dtag=$releaseTag
+
+echo "Running the tests"
+
+mavenCommand="mvn clean test"
+mavenOutput=""
+
+if [[ $debug == "false" ]]; then
+   mavenOutput="> /dev/null 2>&1"
+fi
+
+# Build the application
+echo "Building application"
+eval $mavenCommand $mavenOutput
+
+
+if [[ "$?" != "0" ]]; then
+    println_error "Tests failing. You are not prepared to do a release."
+    println_error "Fix them first and try again."
+    exit 4
+fi
+
+echo "Finishing release"
+mvn release:perform -DlocalCheckout=true
+
+if [[ "$?" != "0" ]]; then
+    println_error "Error finishing release. Fix the problem and retry"
+    exit 5
+fi
+
+println_success "Release done. New version is $nextVersion"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "Release finished"
+fi
