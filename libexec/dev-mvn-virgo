@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME mvn-virgo -h <virgo_dir> -g <goal> [-Dopt1 -Dopt2 ...]
+# Summary: Command line wrapper for maven virgo plugin
+# Group: Build & Deploy & Release
+#
+# Help: Command line wrapper for maven virgo plugin
+#
+#   -h : Virgo installation directory
+#   -g : the goal of the maven virgo plugin
+#
+#   Optional:
+#      -D : plugin options (jvm options)
+#      -v : Print output
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+
+debug="false"
+goal=""
+virgoRoot=""
+options=""
+
+while getopts "h:g:D:v" optname
+do
+    case "$optname" in
+        "h")
+            virgoRoot=$OPTARG
+        ;;
+        "g")
+            goal=$OPTARG
+        ;;
+        "D")
+            options="$options -D$OPTARG"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+if [ "$goal" = "" ]; then
+    println_error "You must specify a goal"
+    exit 1
+fi
+
+if [ "$virgoRoot" = "" ]; then
+    println_error "You must specify the virgo installation directory"
+    exit 1
+fi
+
+mavenCommand="mvn net.flybyte.virgo:virgo-maven-plugin:$goal -Dvirgo.root=$virgoRoot -Dvirgo.startdelay=4000 $options"
+mavenOutput=""
+
+if [[ $debug == "false" ]]; then
+   mavenOutput="> /dev/null 2>&1"
+fi
+
+# Build the application
+echo "Executing maven plugin: $mavenCommand"
+eval $mavenCommand $mavenOutput
+
+
+if [[ "$?" != "0" ]]; then
+    println_error "Error executing maven virgo goal"
+    exit 4
+fi
+
+println_success "Virgo goal applied successfuly"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "Virgo goal applied successfuly"
+fi

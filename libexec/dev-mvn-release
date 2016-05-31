@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Usage: mgc mvn-release [-m] [-v]
+# Usage: $_SUB_NAME mvn-release [-m] [-v]
 # Summary: Makes a release of a maven project
 # Group: Build & Deploy & Release
 #
