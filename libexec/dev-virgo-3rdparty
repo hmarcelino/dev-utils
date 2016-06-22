@@ -1,38 +1,21 @@
 #!/bin/bash
 
-# Usage: $_SUB_NAME mvn-virgo -h <virgo_dir> -g <goal> [-Dopt1 -Dopt2 ...]
-# Summary: Command line wrapper for maven virgo plugin
-# Group: Build & Deploy & Release
+# Usage: $_SUB_NAME mvn-3rdparty
+# Summary: Update 3rd party libraries
+# Group: Ingg virgo
 #
-# Help: Command line wrapper for maven virgo plugin
-#
-#   -h : Virgo installation directory
-#   -g : the goal of the maven virgo plugin
-#
-#   Optional:
-#      -D : plugin options (jvm options)
-#      -v : Print output
+# Help: Update 3rd party libraries
 #
 
 source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/virgo/virgo.properties
 
 debug="false"
-goal=""
-virgoRoot=""
-options=""
+virgoRoot="$virgo_root"
 
-while getopts "h:g:D:v" optname
+while getopts "v" optname
 do
     case "$optname" in
-        "h")
-            virgoRoot=$OPTARG
-        ;;
-        "g")
-            goal=$OPTARG
-        ;;
-        "D")
-            options="$options -D$OPTARG"
-        ;;
         "v")
             debug="true"
         ;;
@@ -51,17 +34,15 @@ do
     esac
 done
 
-if [ "$goal" = "" ]; then
-    println_error "You must specify a goal"
-    exit 1
-fi
-
 if [ "$virgoRoot" = "" ]; then
     println_error "You must specify the virgo installation directory"
+    $_SUB_NAME help mvn-virgo
     exit 1
 fi
 
-mavenCommand="mvn net.flybyte.virgo:virgo-maven-plugin:$goal -Dvirgo.root=$virgoRoot -Dvirgo.startdelay=4000 $options"
+mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml \
+    -f $corehub_repo_dir/corehub-3rdparty-repository/pom.xml clean install"
+
 mavenOutput=""
 
 if [[ $debug == "false" ]]; then
@@ -72,13 +53,15 @@ fi
 echo "Executing maven plugin: $mavenCommand"
 eval $mavenCommand $mavenOutput
 
-
 if [[ "$?" != "0" ]]; then
     println_error "Error executing maven virgo goal"
     exit 4
 fi
 
-println_success "Virgo goal applied successfuly"
+cp $corehub_repo_dir/corehub-3rdparty-repository/target/classes/usr/local/vts/repository/3rdparty/*.jar \
+        $virgo_root/repository/3rdparty
+
+println_success "3rd party copied successfuly"
 
 if command -v "say" | grep "say" &>/dev/null; then
     say "Virgo goal applied successfuly"

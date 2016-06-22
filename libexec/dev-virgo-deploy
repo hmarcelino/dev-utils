@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME virgo-deploy <module>
+# Summary: Deploy virgo module
+# Group: Ingg virgo
+#
+# Help: Deploy virgo module
+#
+#   Optional:
+#      -v : Print output
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/virgo/virgo.properties
+
+# provide completions
+
+debug="true"
+module="$1"
+
+if [ "$1" = "--complete" ]; then
+  ls $corehub_repo_dir
+  exit 0
+fi
+
+mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml \
+ -f $corehub_repo_dir/$module/pom.xml clean install -DskipTests -Dcobertura.skip"
+
+mavenOutput=""
+
+if [[ $debug == "false" ]]; then
+   mavenOutput="> /dev/null 2>&1"
+fi
+
+# Build the application
+echo "Executing maven plugin: $mavenCommand"
+eval $mavenCommand $mavenOutput
+
+if [[ "$?" != "0" ]]; then
+    println_error "Error building $module"
+    exit 4
+fi
+
+echo ""
+echo "Deploying jars:"
+(cd $corehub_repo_dir/$1/ && \
+    find . -name "*.jar" -type f ! -iname "*-sources.jar" && \
+    find . -name "*.jar" -type f ! -iname "*-sources.jar" -exec cp {} $virgo_root/repository/ingg \; )
+
+echo ""
+echo "Deploying wars:"
+(cd $corehub_repo_dir/$1/ && \
+    find . -name "*.war" -type f ! -iname "*-sources.war" && \
+    find . -name "*.war" -type f ! -iname "*-sources.war" -exec cp {} $virgo_root/repository/ingg \; )
+
+println_success "Deploy of module $module done successfuly"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "Deploy of module $module done successfuly"
+fi

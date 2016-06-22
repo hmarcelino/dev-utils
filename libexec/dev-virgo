@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME virgo -a <goal> [-h <virgo_dir>] [-Dopt1 -Dopt2 ...]
+# Summary: Command line manager for virgo
+# Group: Ingg virgo
+#
+# Help: Command line wrapper for maven virgo plugin
+#
+#   -g : the goal of the maven virgo plugin [option: start / stop]
+#
+#   Optional:
+#      -h : Virgo installation directory
+#      -v : Print output
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/virgo/virgo.properties
+
+debug="false"
+action=""
+virgoRoot="$virgo_root"
+options=""
+
+while getopts "a:v" optname
+do
+    case "$optname" in
+        "h")
+            virgoRoot=$OPTARG
+        ;;
+        "a")
+            action=$OPTARG
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+if [ "$action" = "" ]; then
+    println_error "You must specify a action"
+    $_SUB_NAME help virgo
+    exit 1
+fi
+
+if [ "$action" != "start" ] && [ "$action" != "stop" ] ; then
+    println_error "Action not supported"
+    $_SUB_NAME help virgo
+    exit 1
+fi
+
+if [ "$virgoRoot" = "" ]; then
+    println_error "You must specify the virgo installation directory"
+    $_SUB_NAME help mvn-virgo
+    exit 1
+fi
+
+if [ "$action" = "start" ]; then
+    command="(cd $virgoRoot && bin/startup.sh -clean -debug &)"
+else
+    command="(cd $virgoRoot && bin/shutdown.sh &)"
+fi
+
+if [[ $debug == "false" ]]; then
+   commandOutput="> /dev/null 2>&1"
+fi
+
+# Build the application
+echo "Executing command: $command"
+eval $command $commandOutput
+
+if [[ "$?" != "0" ]]; then
+    println_error "Error executing virgo action"
+    exit 4
+fi
+
+println_success "$action virgo action applied successfuly"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "$action virgo action applied successfuly"
+fi
