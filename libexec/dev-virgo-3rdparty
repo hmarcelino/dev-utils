@@ -58,6 +58,8 @@ if [[ "$?" != "0" ]]; then
     exit 4
 fi
 
+rm -rf  $virgo_root/repository/3rdparty/*
+
 cp $corehub_repo_dir/corehub-3rdparty-repository/target/classes/usr/local/vts/repository/3rdparty/*.jar \
         $virgo_root/repository/3rdparty
 

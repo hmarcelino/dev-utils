@@ -6,7 +6,7 @@
 #
 # Help: Command line wrapper for maven virgo plugin
 #
-#   -g : the goal of the maven virgo plugin [option: start / stop]
+#   -a : the goal of the maven virgo plugin [option: start / stop]
 #
 #   Optional:
 #      -h : Virgo installation directory

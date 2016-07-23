@@ -1,12 +1,15 @@
 #!/bin/bash
 
-# Usage: $_SUB_NAME virgo-deploy <module>
+# Usage: $_SUB_NAME virgo-deploy -m <module> [-s]
 # Summary: Deploy virgo module
 # Group: Ingg virgo
 #
 # Help: Deploy virgo module
 #
+#   -m : Module name
+#
 #   Optional:
+#      -s : Skip tests
 #      -v : Print output
 #
 
@@ -14,17 +17,49 @@ source $_SUB_ROOT/share/utils/print.sh
 source $_SUB_ROOT/share/virgo/virgo.properties
 
 # provide completions
-
-debug="true"
-module="$1"
-
 if [ "$1" = "--complete" ]; then
-  ls $corehub_repo_dir
-  exit 0
+    ls $corehub_repo_dir
+    exit 0
 fi
 
+debug="false"
+
+module="$1"
+skipTests="false"
+
+while getopts "m:sv" optname
+do
+    case "$optname" in
+        "m")
+            module=$OPTARG
+        ;;
+        "s")
+            skipTests="true"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
 mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml \
- -f $corehub_repo_dir/$module/pom.xml clean install -DskipTests -Dcobertura.skip"
+ -f $corehub_repo_dir/$module/pom.xml clean install"
+
+ if [[ $skipTests == "true" ]]; then
+    mavenCommand="$mavenCommand  -DskipTests -Dcobertura.skip"
+ fi
 
 mavenOutput=""
 
@@ -43,13 +78,13 @@ fi
 
 echo ""
 echo "Deploying jars:"
-(cd $corehub_repo_dir/$1/ && \
-    find . -name "*.jar" -type f ! -iname "*-sources.jar" && \
-    find . -name "*.jar" -type f ! -iname "*-sources.jar" -exec cp {} $virgo_root/repository/ingg \; )
+(cd $corehub_repo_dir/$module/ && \
+    find . -name "*.jar" -type f ! -iname "*-sources.jar" -not -path "*/WEB-INF/*" && \
+    find . -name "*.jar" -type f ! -iname "*-sources.jar" -not -path "*/WEB-INF/*" -exec cp {} $virgo_root/repository/ingg \; )
 
 echo ""
 echo "Deploying wars:"
-(cd $corehub_repo_dir/$1/ && \
+(cd $corehub_repo_dir/$module/ && \
     find . -name "*.war" -type f ! -iname "*-sources.war" && \
     find . -name "*.war" -type f ! -iname "*-sources.war" -exec cp {} $virgo_root/repository/ingg \; )
 
