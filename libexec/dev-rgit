@@ -5,12 +5,26 @@
 # Help: For each directory execute the git command
 # Group: Env
 #
+#  Options:
+#    -o | --oneline: oneline output by repository
+#
 #  Examples:
 #
 #  * $_SUB_NAME rgit fetch
 #  * $_SUB_NAME rgit pull --rebase
 
-args = ARGV.join(" ")
+onelineOutput = false
+
+args = []
+ARGV.each do |x|
+    if x == "-o" || x == '--oneline'
+        onelineOutput = true
+    else
+        args.push(x)
+    end
+end
+
+args = args.join(" ")
 
 Dir.foreach('.') do |f|
     next unless File.directory? f #only dirs
@@ -22,10 +36,14 @@ Dir.foreach('.') do |f|
             output = `git #{args} 2>&1`
 
             unless output.empty? && $?.success?
-                puts dir
-                puts "-"*dir.size
-                puts output
-                puts "\n"
+                if !onelineOutput
+                    puts dir
+                    puts "-"*dir.size
+                    puts output
+                    puts "\n"
+                else
+                    print dir, ": ", output.gsub("\n", ""), "\n"
+                end
             end
         end
 

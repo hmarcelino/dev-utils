@@ -54,7 +54,7 @@ if [ "$action" = "" ]; then
     exit 1
 fi
 
-if [ "$action" != "start" ] && [ "$action" != "stop" ] ; then
+if [ "$action" != "start" ] && [ "$action" != "stop" ] && [ "$action" != "restart" ]; then
     println_error "Action not supported"
     $_SUB_NAME help virgo
     exit 1
@@ -68,8 +68,10 @@ fi
 
 if [ "$action" = "start" ]; then
     command="(cd $virgoRoot && bin/startup.sh -clean -debug &)"
-else
+elif [ "$action" = "stop" ]; then 
     command="(cd $virgoRoot && bin/shutdown.sh &)"
+else 
+    command="(cd $virgoRoot && touch pickup/corehub-reference-deployment.plan)"
 fi
 
 if [[ $debug == "false" ]]; then
