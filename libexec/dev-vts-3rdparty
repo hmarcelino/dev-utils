@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# Usage: $_SUB_NAME mvn-3rdparty
+# Usage: $_SUB_NAME vts-3rdparty
 # Summary: Update 3rd party libraries
-# Group: Ingg virgo
+# Group: Ingg
 #
 # Help: Update 3rd party libraries
 #
 
 source $_SUB_ROOT/share/utils/print.sh
-source $_SUB_ROOT/share/virgo/virgo.properties
+source $_SUB_ROOT/share/vts/vts.properties
 
 debug="false"
-virgoRoot="$virgo_root"
+vtsRoot="$vts_root"
 
 while getopts "v" optname
 do
@@ -34,14 +34,16 @@ do
     esac
 done
 
-if [ "$virgoRoot" = "" ]; then
-    println_error "You must specify the virgo installation directory"
-    $_SUB_NAME help mvn-virgo
+if [ "$vtsRoot" = "" ]; then
+    println_error "You must specify the vts installation directory"
+    $_SUB_NAME help mvn-vts
     exit 1
 fi
 
-mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml \
-    -f $corehub_repo_dir/corehub-ui-3rdparty-repository/pom.xml clean install"
+println_info "Updating vts 3rdparty libraries"
+
+mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml\
+ -f $corehub_repo_dir/corehub-ui-3rdparty-repository/pom.xml clean install"
 
 mavenOutput=""
 
@@ -50,21 +52,26 @@ if [[ $debug == "false" ]]; then
 fi
 
 # Build the application
-echo "Executing maven plugin: $mavenCommand"
+echo "Executing maven command:"
+echo "> $mavenCommand"
 eval $mavenCommand $mavenOutput
 
 if [[ "$?" != "0" ]]; then
-    println_error "Error executing maven virgo goal"
+    println_error "Error executing vts 3rdparty"
     exit 4
 fi
 
-rm -rf  $virgo_root/repository/3rdparty/*
+rm -rf  $vts_root/repository/3rdparty/*
+
+if [ ! -d $vts_root/repository/3rdparty ]; then
+    mkdir $vts_root/repository/3rdparty
+fi
 
 cp $corehub_repo_dir/corehub-ui-3rdparty-repository/target/classes/usr/share/vts/repository/3rdparty/*.jar \
-        $virgo_root/repository/3rdparty
+        $vts_root/repository/3rdparty
 
 println_success "3rd party copied successfuly"
 
 if command -v "say" | grep "say" &>/dev/null; then
-    say "Virgo goal applied successfuly"
+    say "vts goal applied successfuly"
 fi

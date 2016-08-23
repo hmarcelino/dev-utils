@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME vts-deploy -m [<modules>, ...] [-s]
+# Summary: Deploy vts module
+# Group: Ingg
+#
+# Help: Deploy vts module
+#
+#   -m : Modules name. Split by a comma
+#
+#   Optional:
+#      -s : Skip tests
+#      -v : Print output
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/vts/vts.properties
+
+# provide completions
+if [ "$1" = "--complete" ]; then
+    ls $corehub_repo_dir
+    exit 0
+fi
+
+debug="false"
+
+modules="$1"
+skipTests="false"
+
+while getopts "m:sv" optname
+do
+    case "$optname" in
+        "m")
+            modules=$OPTARG
+        ;;
+        "s")
+            skipTests="true"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+if [[ $modules == "" ]]; then
+    println_error "No modules specified"
+    $_SUB_NAME help vts-deploy
+    exit 1
+fi
+
+IFS=',' read -r -a modules <<< "$modules"
+for module in "${modules[@]}"
+do
+    module=$(echo -e "${module}" | tr -d '[[:space:]]')
+    println_info "Deploying module $module"
+
+    mavenCommand="mvn -s ~/projects/company/enear/inspire/confs/maven-settings.xml -f $corehub_repo_dir/$module/pom.xml clean install"
+
+     if [[ $skipTests == "true" ]]; then
+        mavenCommand="$mavenCommand  -DskipTests -Dcobertura.skip"
+     fi
+
+    mavenOutput=""
+
+    if [[ $debug == "false" ]]; then
+       mavenOutput="> /dev/null 2>&1"
+    fi
+
+    # Build the application
+    echo "Executing maven command:"
+    echo "> $mavenCommand"
+    eval $mavenCommand $mavenOutput
+
+    if [[ "$?" != "0" ]]; then
+        println_error "Error building $module"
+        continue
+    fi
+
+    echo ""
+    echo "Deploying jars:"
+    (cd $corehub_repo_dir/$module/ && \
+        find . -name "*.jar" -type f ! -iname "*-sources.jar" -not -path "*/WEB-INF/*" && \
+        find . -name "*.jar" -type f ! -iname "*-sources.jar" -not -path "*/WEB-INF/*" -exec cp {} $vts_root/repository/ingg \; )
+
+    echo ""
+    echo "Deploying wars:"
+    (cd $corehub_repo_dir/$module/ && \
+        find . -name "*.war" -type f ! -iname "*-sources.war" && \
+        find . -name "*.war" -type f ! -iname "*-sources.war" -exec cp {} $vts_root/repository/ingg \; )
+
+    println_success "Deploy of module $module done successfuly"
+
+    if command -v "say" | grep "say" &>/dev/null; then
+        say "Deploy of module $module done successfuly"
+    fi
+done

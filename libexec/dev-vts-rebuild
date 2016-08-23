@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# Usage: $_SUB_NAME vts-rebuild
+# Summary: Rebuild vts corehub application
+# Group: Ingg
+#
+# Help: Rebuild vts corehub application
+#
+#   Optional:
+#      -s : Skip tests
+#      -v : Print output
+#
+
+source $_SUB_ROOT/share/utils/print.sh
+source $_SUB_ROOT/share/vts/vts.properties
+
+# provide completions
+if [ "$1" = "--complete" ]; then
+    ls $corehub_repo_dir
+    exit 0
+fi
+
+debug="false"
+skipTests="false"
+
+while getopts "sv" optname
+do
+    case "$optname" in
+        "s")
+            skipTests="true"
+        ;;
+        "v")
+            debug="true"
+        ;;
+        "?")
+            echo "Unknown option $OPTARG"
+            exit 1
+            ;;
+        ":")
+            echo "No argument value for option $OPTARG"
+            exit 1
+            ;;
+        *)
+            # Should not occur
+            echo "Unknown error while processing options"
+        ;;
+    esac
+done
+
+rm -rf $vts_root/repository/3rdparty
+$_SUB_NAME vts-3rdparty
+
+rm -f $vts_root/repository/ingg/plugin-*.{jar,war}
+rm -f $vts_root/repository/ingg/corehub-*.{jar,war}
+$_SUB_NAME vts-deploy -m "aaa-core,\
+ corehub-datasource-service,\
+ corehub-ui-api,\
+ corehub-ui,\
+ plugin-estate-management,\
+ plugin-solr"
+
+# Update solr schema
+cp $corehub_repo_dir/solr-home/src/main/resources/usr/share/vts/solr/conf/schema.xml \
+    $vts_root/solr/conf/schema.xml
+println_success "Schema Solr updated"
+
+if command -v "say" | grep "say" &>/dev/null; then
+    say "Vts rebuild finished"
+fi

@@ -1,31 +1,31 @@
 #!/bin/bash
 
-# Usage: $_SUB_NAME virgo -a <goal> [-h <virgo_dir>] [-Dopt1 -Dopt2 ...]
-# Summary: Command line manager for virgo
-# Group: Ingg virgo
+# Usage: $_SUB_NAME vts -a <goal> [-h <vts_dir>] [-Dopt1 -Dopt2 ...]
+# Summary: Command line manager for vts
+# Group: Ingg
 #
-# Help: Command line wrapper for maven virgo plugin
+# Help: Command line wrapper for vts application
 #
-#   -a : the goal of the maven virgo plugin [option: start / stop]
+#   -a : the action for the vts [option: start | stop | restart]
 #
 #   Optional:
-#      -h : Virgo installation directory
+#      -h : vts installation directory
 #      -v : Print output
 #
 
 source $_SUB_ROOT/share/utils/print.sh
-source $_SUB_ROOT/share/virgo/virgo.properties
+source $_SUB_ROOT/share/vts/vts.properties
 
 debug="false"
 action=""
-virgoRoot="$virgo_root"
+vtsRoot="$vts_root"
 options=""
 
 while getopts "a:v" optname
 do
     case "$optname" in
         "h")
-            virgoRoot=$OPTARG
+            vtsRoot=$OPTARG
         ;;
         "a")
             action=$OPTARG
@@ -50,28 +50,30 @@ done
 
 if [ "$action" = "" ]; then
     println_error "You must specify a action"
-    $_SUB_NAME help virgo
+    $_SUB_NAME help vts
     exit 1
 fi
 
 if [ "$action" != "start" ] && [ "$action" != "stop" ] && [ "$action" != "restart" ]; then
     println_error "Action not supported"
-    $_SUB_NAME help virgo
+    $_SUB_NAME help vts
     exit 1
 fi
 
-if [ "$virgoRoot" = "" ]; then
-    println_error "You must specify the virgo installation directory"
-    $_SUB_NAME help mvn-virgo
+if [ "$vtsRoot" = "" ]; then
+    println_error "You must specify the vts installation directory"
+    $_SUB_NAME help vts
     exit 1
 fi
 
 if [ "$action" = "start" ]; then
-    command="(cd $virgoRoot && bin/startup.sh -clean -debug &)"
-elif [ "$action" = "stop" ]; then 
-    command="(cd $virgoRoot && bin/shutdown.sh &)"
-else 
-    command="(cd $virgoRoot && touch pickup/corehub-reference-deployment.plan)"
+    command="(cd $vtsRoot && bin/startup.sh -clean -debug &)"
+
+elif [ "$action" = "stop" ]; then
+    command="(cd $vtsRoot && bin/shutdown.sh &)"
+
+else
+    command="(cd $vtsRoot && touch pickup/corehub-reference-deployment.plan)"
 fi
 
 if [[ $debug == "false" ]]; then
@@ -83,12 +85,12 @@ echo "Executing command: $command"
 eval $command $commandOutput
 
 if [[ "$?" != "0" ]]; then
-    println_error "Error executing virgo action"
+    println_error "Error executing vts action"
     exit 4
 fi
 
-println_success "$action virgo action applied successfuly"
+println_success "$action vts action applied successfuly"
 
 if command -v "say" | grep "say" &>/dev/null; then
-    say "$action virgo action applied successfuly"
+    say "$action vts action applied successfuly"
 fi
