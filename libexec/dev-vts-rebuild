@@ -56,11 +56,13 @@ $_SUB_NAME vts-deploy -m "aaa-core,\
  corehub-datasource-service,\
  corehub-ui-api,\
  corehub-ui,\
+ plugin-webapp-i18n-portuguese,\
  plugin-estate-management,\
+ plugin-estate-management-i18n-portuguese,\
  plugin-solr"
 
 # Update solr schema
-cp $corehub_repo_dir/solr-home/src/main/resources/usr/share/vts/solr/conf/schema.xml \
+cp $corehub_repo_dir/corehub-solr-config/src/main/resources/usr/share/vts/solr/conf/schema.xml \
     $vts_root/solr/conf/schema.xml
 println_success "Schema Solr updated"
 
