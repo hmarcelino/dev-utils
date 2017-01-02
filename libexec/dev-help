@@ -11,8 +11,7 @@ print_summaries() {
   local command
 
   for command in $($_SUB_NAME-commands); do
-    local file="$(command_path "$command")"
-    if [ ! -h "$file" ]; then
+      local file="$(command_path "$command")"
 
       local group="$(group "$file")"
       local summary="$(summary "$file")"
@@ -22,7 +21,6 @@ print_summaries() {
       fi
 
       if [[ ! "${groups[@]}" =~ "$group" ]]; then
-
         groups+=("$group")
       fi
 
@@ -38,8 +36,6 @@ print_summaries() {
           longest_command="${#command}"
         fi
       fi
-
-    fi
   done
 
   local index
