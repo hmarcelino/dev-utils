@@ -45,7 +45,7 @@ if [[ $name == "" ]]; then
     exit 1
 fi
 
-result=`ssh-keygen -t rsa -b 1024 -C $name -f ~/.ssh/$name`
+result=`ssh-keygen -t rsa -b 2048 -C $name -f ~/.ssh/$name`
 if [ $? -eq 0 ]; then
     echo -e "Success generating public/private rsa key";
     echo -e "public key:"
